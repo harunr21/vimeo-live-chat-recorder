@@ -40,6 +40,11 @@ async function refresh() {
   } catch (_) { update(null); $('status').textContent = 'Sayfa hazırlanıyor…'; }
 }
 
+async function loadSettings() {
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  $('autoDownload').checked = Boolean(settings.autoDownloadOnFinish);
+}
+
 function fileStem() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `vimeo-sohbet-kaydi-${stamp}`;
@@ -67,4 +72,8 @@ $('toggle').addEventListener('click', async () => {
 });
 $('downloadJson').addEventListener('click', () => download('json'));
 $('downloadTxt').addEventListener('click', () => download('txt'));
-document.addEventListener('DOMContentLoaded', () => { refresh(); setInterval(refresh, 1500); });
+$('autoDownload').addEventListener('change', async event => {
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  await chrome.storage.local.set({ settings: { ...settings, autoDownloadOnFinish: event.target.checked } });
+});
+document.addEventListener('DOMContentLoaded', () => { loadSettings(); refresh(); setInterval(refresh, 1500); });

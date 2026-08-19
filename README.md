@@ -2,6 +2,8 @@
 
 Vimeo canlı yayınlarının sohbet alanını algılar, yayındaki mesajları otomatik kaydeder ve kayıt bittiğinde indirmeye hazır tutar.
 
+İsteğe bağlı **otomatik indirme** ayarı açık olduğunda yayın sonu algılandığı anda JSON ve TXT kayıtları kullanıcı müdahalesi olmadan indirilir.
+
 ## Kayıt biçimi
 
 - **JSON (önerilen):** Her mesaj için kullanıcı adı, sohbetin gösterdiği saat, metin ve yakalama zamanını yapısal olarak saklar.

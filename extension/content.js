@@ -168,16 +168,24 @@
     }
     if (state.status !== 'recording') return;
     attachObserver();
-    if (pageSignalsFinished()) finish('Yayın sona erdi');
+    if (pageSignalsFinished()) finish('Yayın sona erdi', true);
   }
 
-  function finish(reason = 'Kullanıcı tarafından durduruldu') {
+  function finish(reason = 'Kullanıcı tarafından durduruldu', isLiveEnd = false) {
     if (state.status !== 'recording' && state.status !== 'waiting') return;
     state.observer?.disconnect();
     state.observer = null;
     state.observerTarget = null;
-    setStatus(reason === 'Kullanıcı tarafından durduruldu' ? 'stopped' : 'finished', reason);
-    chrome.runtime.sendMessage({ type: 'PERSIST_RECORDING', recording: serializableState() }).catch(() => {});
+    setStatus(isLiveEnd ? 'finished' : 'stopped', reason);
+    const recording = serializableState();
+    chrome.runtime.sendMessage({ type: 'PERSIST_RECORDING', recording }).catch(() => {});
+    if (isLiveEnd && recording.messages.length) {
+      chrome.storage.local.get('settings').then(({ settings }) => {
+        if (settings?.autoDownloadOnFinish) {
+          chrome.runtime.sendMessage({ type: 'AUTO_DOWNLOAD_RECORDING', recording }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
   }
 
   function getStatus() {
