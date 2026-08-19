@@ -1,0 +1,22 @@
+# Vimeo Canlı Sohbet Kaydedici
+
+Vimeo canlı yayınlarının sohbet alanını algılar, yayındaki mesajları otomatik kaydeder ve kayıt bittiğinde indirmeye hazır tutar.
+
+## Kayıt biçimi
+
+- **JSON (önerilen):** Her mesaj için kullanıcı adı, sohbetin gösterdiği saat, metin ve yakalama zamanını yapısal olarak saklar.
+- **TXT:** Kolay okunur satır formatıdır: `[14:32] Kullanıcı: Mesaj`.
+
+## Kurulum
+
+1. Chrome'da `chrome://extensions` açın ve **Geliştirici modu**nu açın.
+2. **Paketlenmemiş öğe yükle**ye tıklayın.
+3. Bu projenin `extension` klasörünü seçin.
+4. Vimeo canlı yayın sayfanızı açın. Sohbet alanı yüklendiğinde kayıt kendiliğinden başlar.
+
+Yayın bittiğinde eklenti yayın sonu sinyalini algılayıp kaydı tamamlar. Eklenti simgesinden JSON veya TXT olarak indirebilirsiniz. Son kayıt bu cihazda eklenti yerel verisine de saklanır; yayın sekmesini kapattıktan sonra bile eklenti simgesinden indirebilirsiniz.
+
+## Notlar
+
+- Vimeo'nin sohbet arayüzü değişirse seçicilerin güncellenmesi gerekebilir.
+- İlk yükleme sırasında sohbette görünür olan eski mesajlar da kayda eklenir.

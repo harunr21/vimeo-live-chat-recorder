@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vimeo Sohbet Kaydedici</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header><span class="mark">V</span><div><h1>Sohbet Kaydedici</h1><p id="status">Vimeo yayını bekleniyor</p></div></header>
+      <section class="count"><strong id="count">0</strong><span>kaydedilen mesaj</span></section>
+      <p class="hint" id="detail">Sohbet görünür olduğunda kayıt otomatik başlar.</p>
+      <div class="actions">
+        <button id="toggle" class="secondary">Kaydı durdur</button>
+        <button id="downloadJson" class="primary" disabled>JSON indir</button>
+        <button id="downloadTxt" class="secondary" disabled>TXT indir</button>
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
