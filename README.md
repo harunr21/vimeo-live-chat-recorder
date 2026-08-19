@@ -16,6 +16,8 @@ Vimeo canlı yayınlarının sohbet alanını algılar, yayındaki mesajları ot
 3. Bu projenin `extension` klasörünü seçin.
 4. Vimeo canlı yayın sayfanızı açın. Sohbet alanı yüklendiğinde kayıt kendiliğinden başlar.
 
+Eklentiyi ilk kez yüklediğinizde veya kodu güncelledikten sonra, önceden açık olan Vimeo sekmesini bir kez yenileyin. Chrome içerik betiklerini açık sayfalara geriye dönük olarak enjekte etmez.
+
 Yayın bittiğinde eklenti yayın sonu sinyalini algılayıp kaydı tamamlar. Eklenti simgesinden JSON veya TXT olarak indirebilirsiniz. Son kayıt bu cihazda eklenti yerel verisine de saklanır; yayın sekmesini kapattıktan sonra bile eklenti simgesinden indirebilirsiniz.
 
 ## Notlar

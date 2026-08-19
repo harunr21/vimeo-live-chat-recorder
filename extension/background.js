@@ -6,6 +6,21 @@ async function getRecordings() {
   return result[RECORDINGS_KEY] || {};
 }
 
+function messageCount(recording) {
+  return Array.isArray(recording?.messages) ? recording.messages.length : Number(recording?.messageCount) || 0;
+}
+
+function shouldReplaceRecording(existing, incoming, frameId) {
+  if (!existing || existing.frameId === frameId) return true;
+  const existingCount = messageCount(existing);
+  const incomingCount = messageCount(incoming);
+  if (incomingCount !== existingCount) return incomingCount > existingCount;
+  if (incomingCount > 0) {
+    return new Date(incoming.updatedAt || 0) >= new Date(existing.updatedAt || 0);
+  }
+  return incoming.status === 'recording' && existing.status !== 'recording';
+}
+
 function downloadName(extension) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `vimeo-chat-recording-${stamp}.${extension}`;
@@ -56,6 +71,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'GET_TAB_RECORDING') {
+    getRecordings()
+      .then(recordings => sendResponse(recordings[String(message.tabId)] || null))
+      .catch(() => sendResponse(null));
+    return true;
+  }
+
   if (message.type === 'AUTO_DOWNLOAD_RECORDING') {
     downloadFinishedRecording(message.recording)
       .then(() => sendResponse({ success: true }))
@@ -66,7 +88,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PERSIST_RECORDING' && sender.tab?.id != null) {
     (async () => {
       const recordings = await getRecordings();
-      recordings[String(sender.tab.id)] = { ...message.recording, tabId: sender.tab.id };
+      const key = String(sender.tab.id);
+      const frameId = sender.frameId ?? 0;
+      if (shouldReplaceRecording(recordings[key], message.recording, frameId)) {
+        recordings[key] = { ...message.recording, tabId: sender.tab.id, frameId };
+      }
       await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
       sendResponse({ success: true });
     })().catch(error => sendResponse({ success: false, error: error.message }));

@@ -7,7 +7,15 @@ function statusText(status) {
 
 async function activeVimeoTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id && tab.url?.includes('vimeo.com') ? tab : null;
+  if (!tab?.id || !tab.url) return null;
+  try {
+    const hostname = new URL(tab.url).hostname;
+    return hostname === 'vimeo.com' || hostname.endsWith('.vimeo.com') ? tab : null;
+  } catch (_) { return null; }
+}
+
+function countOf(recording) {
+  return Array.isArray(recording?.messages) ? recording.messages.length : Number(recording?.messageCount) || 0;
 }
 
 function update(recording) {
@@ -35,8 +43,12 @@ async function refresh() {
       if (!saved) $('status').textContent = 'Bir Vimeo sayfası açın';
       return;
     }
-    const data = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' });
-    update({ ...data, isLive: true });
+    const [direct, saved] = await Promise.all([
+      chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }).catch(() => null),
+      chrome.runtime.sendMessage({ type: 'GET_TAB_RECORDING', tabId: tab.id }).catch(() => null)
+    ]);
+    const data = countOf(saved) > countOf(direct) ? saved : direct || saved;
+    update(data ? { ...data, isLive: true } : null);
   } catch (_) { update(null); $('status').textContent = 'Sayfa hazırlanıyor…'; }
 }
 
@@ -68,7 +80,8 @@ function download(format) {
 $('toggle').addEventListener('click', async () => {
   const tab = await activeVimeoTab(); if (!tab || !current?.isLive) return;
   const type = current.status === 'recording' || current.status === 'waiting' ? 'STOP_RECORDING' : 'START_RECORDING';
-  update(await chrome.tabs.sendMessage(tab.id, { type }));
+  const result = await chrome.tabs.sendMessage(tab.id, { type }).catch(() => null);
+  if (result) update({ ...result, isLive: true });
 });
 $('downloadJson').addEventListener('click', () => download('json'));
 $('downloadTxt').addEventListener('click', () => download('txt'));

@@ -18,23 +18,34 @@
   };
 
   const CHAT_CONTAINER_SELECTORS = [
+    // Vimeo broadcaster studio.
+    '#chat-history',
+    // Vimeo event and engagement-tool views.
+    '#interaction-chat-history',
+    '#interaction-widget-auto-sidebar-item-content-chat',
+    '#live-chat-app',
     '[data-testid="chat-message-list"]',
     'ul[class*="chat-message-list"]',
     '[class*="chat-messages"]',
     '[class*="ChatMessages"]',
     '[class*="chat-list"]',
     '[class*="ChatList"]',
-    '[role="log"]',
-    '[aria-label*="chat" i]'
+    '[role="log"]'
   ];
 
   const MESSAGE_SELECTORS = [
     'li[data-group="true"].chat-message',
     'li.chat-message',
     'li[class*="chat-message"]',
+    '#live-chat-app li',
+    '#interaction-chat-history li',
+    '#interaction-widget-auto-sidebar-item-content-chat li',
+    'li[class*="interaction-chat-message"]',
     '[data-testid="chat-message"]',
     '[role="listitem"][class*="ChatMessage"]'
   ].join(', ');
+
+  const FRAME_COMMAND_SOURCE = 'vimeo-chat-recorder-frame-command';
 
   function findChatContainer() {
     for (const selector of CHAT_CONTAINER_SELECTORS) {
@@ -64,12 +75,16 @@
       // Vimeo Live'in mevcut satır yapısı:
       // li.chat-message > ... > p.chat-message-author-name-label
       '.chat-message-author-name-label', '.chat-message-author-name-label p',
+      '.chat-message-author-name',
+      '[class^="interaction-chat-message-author-name"] p',
+      '[class*="interaction-chat-message-author-name"] p',
       'p[class*="author-name"]', '[class*="author-name"]', '[class*="AuthorName"]',
       '[data-testid*="author"]', '[data-testid*="username"]', '[class*="username"]', '[class*="UserName"]'
     ]);
     const text = textFrom(row, [
       'p.chat-message-content',
-      '.chat-message-content', '[class*="message-content"]', '[class*="MessageContent"]',
+      '.chat-message-content', '.interaction-chat-message-content',
+      '[class*="message-content"]', '[class*="MessageContent"]',
       '[data-testid*="message-content"]'
     ]);
     const displayTime = textFrom(row, [
@@ -111,9 +126,11 @@
 
   function recordRow(row) {
     if (!isMessageElement(row) || state.processedNodes.has(row) || state.status !== 'recording') return;
-    state.processedNodes.add(row);
     const { author, text, displayTime } = readMessage(row);
-    if (!author && !text) return;
+    // Vimeo can append an empty <li> first and populate it in a later React
+    // render. Do not mark the row until its actual message text is available.
+    if (!text) return;
+    state.processedNodes.add(row);
     state.messages.push({
       author: author || 'Bilinmeyen kullanıcı',
       text,
@@ -135,7 +152,12 @@
   function attachObserver() {
     const container = findChatContainer();
     if (!container) return false;
-    if (state.observerTarget === container && state.observer) return true;
+    if (state.observerTarget === container && state.observer) {
+      // React can mount the list after the container without replacing it.
+      // A cheap periodic rescan catches those rows while WeakSet prevents duplicates.
+      container.querySelectorAll(MESSAGE_SELECTORS).forEach(recordRow);
+      return true;
+    }
     state.observer?.disconnect();
     state.observer = new MutationObserver(mutations => {
       if (state.status !== 'recording') return;
@@ -192,17 +214,38 @@
     return { ...serializableState(), canExport: state.messages.length > 0 };
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === 'GET_STATUS') sendResponse(getStatus());
-    if (message.type === 'STOP_RECORDING') { finish(); sendResponse(getStatus()); }
-    if (message.type === 'START_RECORDING') {
+  function relayCommandToChildren(type) {
+    document.querySelectorAll('iframe').forEach(frame => {
+      try { frame.contentWindow?.postMessage({ source: FRAME_COMMAND_SOURCE, type }, '*'); } catch (_) {}
+    });
+  }
+
+  function handleControl(type) {
+    if (type === 'STOP_RECORDING') finish();
+    if (type === 'START_RECORDING') {
       if (state.status === 'stopped' || state.status === 'finished') {
         state.messages = []; state.processedNodes = new WeakSet(); state.startedAt = null; state.endedAt = null; state.finishReason = null;
         setStatus('waiting');
       }
-      watch(); sendResponse(getStatus());
+      watch();
+    }
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === 'GET_STATUS') sendResponse(getStatus());
+    if (message.type === 'STOP_RECORDING' || message.type === 'START_RECORDING') {
+      relayCommandToChildren(message.type);
+      handleControl(message.type);
+      sendResponse(getStatus());
     }
     return true;
+  });
+
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.data?.source !== FRAME_COMMAND_SOURCE) return;
+    if (event.data.type !== 'STOP_RECORDING' && event.data.type !== 'START_RECORDING') return;
+    relayCommandToChildren(event.data.type);
+    handleControl(event.data.type);
   });
 
   window.addEventListener('pagehide', () => {
