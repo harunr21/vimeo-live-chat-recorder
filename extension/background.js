@@ -1,9 +1,16 @@
 const RECORDINGS_KEY = 'recordings';
 const SETTINGS_KEY = 'settings';
+let recordingMutationQueue = Promise.resolve();
 
 async function getRecordings() {
   const result = await chrome.storage.local.get(RECORDINGS_KEY);
   return result[RECORDINGS_KEY] || {};
+}
+
+function mutateRecordings(task) {
+  const operation = recordingMutationQueue.then(task, task);
+  recordingMutationQueue = operation.catch(() => {});
+  return operation;
 }
 
 function messageCount(recording) {
@@ -60,6 +67,72 @@ async function downloadFinishedRecording(recording) {
   ]);
 }
 
+async function maybeAutoDownload(recording) {
+  if (recording?.status !== 'finished' || !recording.messages?.length || recording.autoDownloadedAt) {
+    return recording;
+  }
+  const { [SETTINGS_KEY]: settings = {} } = await chrome.storage.local.get(SETTINGS_KEY);
+  if (!settings.autoDownloadOnFinish) return recording;
+  await downloadFinishedRecording(recording);
+  return { ...recording, autoDownloadedAt: new Date().toISOString() };
+}
+
+async function persistRecording(tabId, frameId, incoming) {
+  return mutateRecordings(async () => {
+    const recordings = await getRecordings();
+    const key = String(tabId);
+    const existing = recordings[key];
+    if (!shouldReplaceRecording(existing, incoming, frameId)) return existing;
+
+    let recording = { ...incoming, tabId, frameId };
+    if (existing?.startedAt && existing.startedAt === recording.startedAt && existing.autoDownloadedAt) {
+      recording.autoDownloadedAt = existing.autoDownloadedAt;
+    }
+
+    // Store first so the recording remains recoverable even if Chrome rejects a download.
+    recordings[key] = recording;
+    await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
+
+    const completed = await maybeAutoDownload(recording);
+    if (completed !== recording) {
+      recordings[key] = completed;
+      await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
+      recording = completed;
+    }
+    return recording;
+  });
+}
+
+async function finishSavedRecording(tabId) {
+  return mutateRecordings(async () => {
+    const recordings = await getRecordings();
+    const key = String(tabId);
+    const existing = recordings[key];
+    if (!existing?.messages?.length) return existing || null;
+
+    const pageWasUnloaded = existing.status === 'stopped' && existing.finishReason === 'Sayfa kapatıldı veya değiştirildi';
+    if (existing.status !== 'recording' && existing.status !== 'finished' && !pageWasUnloaded) return existing;
+
+    let recording = existing.status === 'finished' ? existing : {
+      ...existing,
+      status: 'finished',
+      endedAt: existing.endedAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      finishReason: 'Yayın sona erdi'
+    };
+    recordings[key] = recording;
+    await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
+
+    const completed = await maybeAutoDownload(recording);
+    if (completed !== recording) {
+      recordings[key] = completed;
+      await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
+      recording = completed;
+    }
+    return recording;
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_LATEST_RECORDING') {
     (async () => {
@@ -78,24 +151,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'AUTO_DOWNLOAD_RECORDING') {
-    downloadFinishedRecording(message.recording)
-      .then(() => sendResponse({ success: true }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+  if (message.type === 'LIVE_END_DETECTED' && sender.tab?.id != null) {
+    (async () => {
+      const tabId = sender.tab.id;
+      // The end signal can originate in the player frame while the messages
+      // live in a sibling chat frame. Broadcast it to every content script.
+      await chrome.tabs.sendMessage(tabId, { type: 'LIVE_ENDED' }).catch(() => {});
+      // A removed/navigated chat frame cannot receive the broadcast. Give an
+      // active frame time to persist its freshest state, then finish the saved copy.
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const recording = await finishSavedRecording(tabId);
+      sendResponse({ success: true, recording });
+    })().catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
   if (message.type === 'PERSIST_RECORDING' && sender.tab?.id != null) {
-    (async () => {
-      const recordings = await getRecordings();
-      const key = String(sender.tab.id);
-      const frameId = sender.frameId ?? 0;
-      if (shouldReplaceRecording(recordings[key], message.recording, frameId)) {
-        recordings[key] = { ...message.recording, tabId: sender.tab.id, frameId };
-      }
-      await chrome.storage.local.set({ [RECORDINGS_KEY]: recordings });
-      sendResponse({ success: true });
-    })().catch(error => sendResponse({ success: false, error: error.message }));
+    persistRecording(sender.tab.id, sender.frameId ?? 0, message.recording)
+      .then(recording => sendResponse({ success: true, recording }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Vimeo Canlı Sohbet Kaydedici",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Vimeo canlı yayın sohbetlerini otomatik olarak kaydeder ve dışa aktarır.",
   "permissions": ["activeTab", "storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["https://vimeo.com/*", "https://*.vimeo.com/*"],

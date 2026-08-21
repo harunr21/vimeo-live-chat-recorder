@@ -20,6 +20,8 @@ Eklentiyi ilk kez yüklediğinizde veya kodu güncelledikten sonra, önceden aç
 
 Yayın bittiğinde eklenti yayın sonu sinyalini algılayıp kaydı tamamlar. Eklenti simgesinden JSON veya TXT olarak indirebilirsiniz. Son kayıt bu cihazda eklenti yerel verisine de saklanır; yayın sekmesini kapattıktan sonra bile eklenti simgesinden indirebilirsiniz.
 
+Yayın oynatıcısı ile sohbet farklı iframe'lerde açılsa bile yayın sonu sinyali sohbet kaydına iletilir. Otomatik indirme işlemi arka planda tek kez çalıştırılır; yayın sonunda JSON ve TXT dosyaları Chrome'un varsayılan indirme klasörüne kaydedilir.
+
 ## Notlar
 
 - Vimeo'nin sohbet arayüzü değişirse seçicilerin güncellenmesi gerekebilir.

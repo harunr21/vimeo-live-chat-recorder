@@ -46,6 +46,7 @@
   ].join(', ');
 
   const FRAME_COMMAND_SOURCE = 'vimeo-chat-recorder-frame-command';
+  const LIVE_END_REASON = 'Yayın sona erdi';
 
   function findChatContainer() {
     for (const selector of CHAT_CONTAINER_SELECTORS) {
@@ -175,10 +176,22 @@
     const video = document.querySelector('video');
     if (video?.ended) return true;
     const pageText = document.body?.innerText?.slice(-12000).toLowerCase() || '';
-    return /live event has ended|event has ended|yayın sona erdi|canlı yayın sona erdi/.test(pageText);
+    return /live event has ended|event has ended|live stream has ended|stream has ended|event is over|yayın sona erdi|canlı yayın sona erdi|yayın bitti/.test(pageText);
+  }
+
+  function signalLiveEnd() {
+    if (state.status !== 'recording' && state.status !== 'waiting') return;
+    finish(LIVE_END_REASON, true);
+    // Any frame may see the end first. The service worker broadcasts it to
+    // the sibling frame that actually owns the chat messages.
+    chrome.runtime.sendMessage({ type: 'LIVE_END_DETECTED' }).catch(() => {});
   }
 
   function watch() {
+    if ((state.status === 'waiting' || state.status === 'recording') && pageSignalsFinished()) {
+      signalLiveEnd();
+      return;
+    }
     if (state.status === 'waiting') {
       // Switch state before the initial scan so messages already visible when
       // the chat mounts are included as well as future mutations.
@@ -190,7 +203,6 @@
     }
     if (state.status !== 'recording') return;
     attachObserver();
-    if (pageSignalsFinished()) finish('Yayın sona erdi', true);
   }
 
   function finish(reason = 'Kullanıcı tarafından durduruldu', isLiveEnd = false) {
@@ -201,13 +213,6 @@
     setStatus(isLiveEnd ? 'finished' : 'stopped', reason);
     const recording = serializableState();
     chrome.runtime.sendMessage({ type: 'PERSIST_RECORDING', recording }).catch(() => {});
-    if (isLiveEnd && recording.messages.length) {
-      chrome.storage.local.get('settings').then(({ settings }) => {
-        if (settings?.autoDownloadOnFinish) {
-          chrome.runtime.sendMessage({ type: 'AUTO_DOWNLOAD_RECORDING', recording }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
   }
 
   function getStatus() {
@@ -222,6 +227,7 @@
 
   function handleControl(type) {
     if (type === 'STOP_RECORDING') finish();
+    if (type === 'LIVE_ENDED') finish(LIVE_END_REASON, true);
     if (type === 'START_RECORDING') {
       if (state.status === 'stopped' || state.status === 'finished') {
         state.messages = []; state.processedNodes = new WeakSet(); state.startedAt = null; state.endedAt = null; state.finishReason = null;
@@ -233,7 +239,7 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'GET_STATUS') sendResponse(getStatus());
-    if (message.type === 'STOP_RECORDING' || message.type === 'START_RECORDING') {
+    if (message.type === 'STOP_RECORDING' || message.type === 'START_RECORDING' || message.type === 'LIVE_ENDED') {
       relayCommandToChildren(message.type);
       handleControl(message.type);
       sendResponse(getStatus());
@@ -243,7 +249,7 @@
 
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.data?.source !== FRAME_COMMAND_SOURCE) return;
-    if (event.data.type !== 'STOP_RECORDING' && event.data.type !== 'START_RECORDING') return;
+    if (event.data.type !== 'STOP_RECORDING' && event.data.type !== 'START_RECORDING' && event.data.type !== 'LIVE_ENDED') return;
     relayCommandToChildren(event.data.type);
     handleControl(event.data.type);
   });
@@ -251,6 +257,12 @@
   window.addEventListener('pagehide', () => {
     if (state.status === 'recording') finish('Sayfa kapatıldı veya değiştirildi');
   });
+
+  // Catch the media event even when Vimeo replaces the video element before
+  // the periodic scan can observe video.ended.
+  document.addEventListener('ended', event => {
+    if (event.target instanceof HTMLVideoElement) signalLiveEnd();
+  }, true);
 
   state.scanTimer = setInterval(watch, 1500);
   setTimeout(watch, 500);
